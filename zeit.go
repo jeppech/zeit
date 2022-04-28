@@ -8,22 +8,29 @@ import (
 
 const timeLayout = "15:04:05"
 
-var ZeitLayoutError = errors.New(`zeit error: time must be formatted as "15:04:05"`)
-var ZeitTypeError = errors.New(`zeit error: type of scanned source cannot be asserted to []byte`)
-var ZeitRangeLocationError = errors.New(`zeit range error: location of times in ZeitRange must be equal`)
+var (
+	ErrZeitLayout        = errors.New(`zeit error: time must be formatted as "15:04:05"`)
+	ErrZeitType          = errors.New(`zeit error: type of scanned source cannot be asserted to []byte`)
+	ErrZeitRangeLocation = errors.New(`zeit range error: location of times in ZeitRange must be equal`)
+)
 
 type Zeit struct {
 	time.Time
 }
 
+// Now will return a new Zeit instant in UTC
 func Now() Zeit {
 	return Zeit{time.Now()}
 }
 
+// FromTime takes a time.Time instant and sources a Zeit instant from that
 func FromTime(t time.Time) Zeit {
 	return Zeit{t}
 }
 
+// Parse a string into a Zeit instant
+//
+// ex. Parse("23:10:05")
 func Parse(src string) (Zeit, error) {
 	var z Zeit
 	t, err := time.Parse(timeLayout, src)
@@ -34,19 +41,22 @@ func Parse(src string) (Zeit, error) {
 	return z, err
 }
 
+// IsZero reports if the underlying time.Time instant is zero
 func (z Zeit) IsZero() bool {
 	return z.Time.IsZero()
 }
 
+// MarshalJSON implements the encoding/json marshaller interface
 func (z Zeit) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + z.Format(timeLayout) + `"`), nil
 }
 
+// UnmarshalJSON implements the encoding/json unmarshaller interface
 func (z *Zeit) UnmarshalJSON(b []byte) error {
 	s := string(b)
 
 	if len(s) != 10 {
-		return ZeitLayoutError
+		return ErrZeitLayout
 	}
 
 	var ret time.Time
@@ -61,10 +71,12 @@ func (z *Zeit) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// Value implements the database/sql Valuer interface
 func (z Zeit) Value() (driver.Value, error) {
 	return driver.Value(z.Format(timeLayout)), nil
 }
 
+// Scan implements the database/sql Scanner interface
 func (z *Zeit) Scan(v interface{}) error {
 	var source string
 
@@ -76,7 +88,7 @@ func (z *Zeit) Scan(v interface{}) error {
 		source = string(v)
 
 	default:
-		return ZeitTypeError
+		return ErrZeitType
 	}
 
 	var ret time.Time
@@ -93,6 +105,27 @@ func (z *Zeit) Scan(v interface{}) error {
 
 type ZeitRange [2]Zeit
 
+// RangeFromZeit creates a ZeitRange instant from two Zeit instants
+func RangeFromZeit(from_z Zeit, to_z Zeit) (*ZeitRange, error) {
+	if from_z.Location().String() != to_z.Location().String() {
+		return nil, ErrZeitRangeLocation
+	}
+
+	return &ZeitRange{from_z, to_z}, nil
+}
+
+// RangeFromTime creates a ZeitRange instant from two time.Time instants
+// useful if you need to use another Location
+func RangeFromTime(from_t time.Time, to_t time.Time) (*ZeitRange, error) {
+	from_z := FromTime(from_t)
+	to_z := FromTime(to_t)
+
+	return RangeFromZeit(from_z, to_z)
+}
+
+// RangeParse create a ZeitRange from two strings
+//
+// ex. RangeParse("10:15:00", "23:00:30")
 func RangeParse(from string, to string) (*ZeitRange, error) {
 	z_from, err := Parse(from)
 
@@ -108,26 +141,13 @@ func RangeParse(from string, to string) (*ZeitRange, error) {
 	return RangeFromZeit(z_from, z_to)
 }
 
-func RangeFromZeit(from_z Zeit, to_z Zeit) (*ZeitRange, error) {
-	if from_z.Location().String() != to_z.Location().String() {
-		return nil, ZeitRangeLocationError
-	}
-
-	return &ZeitRange{from_z, to_z}, nil
-}
-
-func RangeFromTime(from_t time.Time, to_t time.Time) (*ZeitRange, error) {
-	from_z := FromTime(from_t)
-	to_z := FromTime(to_t)
-
-	return RangeFromZeit(from_z, to_z)
-}
-
-func (zr ZeitRange) IsZero() bool {
+// IsZero reports if either of the two underlying time.Time instants are zero
+func (zr *ZeitRange) IsZero() bool {
 	return zr[0].IsZero() || zr[1].IsZero()
 }
 
-func (zr ZeitRange) Within(t time.Time) bool {
+// Within reports if a give time.Time instant is within the range of the two Zeit instants in the ZeitRange
+func (zr *ZeitRange) Within(t time.Time) bool {
 	tmp := time.Date(0, 0, 0, t.Hour(), t.Minute(), t.Second(), 0, t.Location())
 
 	return tmp.After(zr[0].Time) && tmp.Before(zr[1].Time)
