@@ -3,6 +3,7 @@ package zeit
 import (
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -44,6 +45,10 @@ func Parse(src string) (Zeit, error) {
 // IsZero reports if the underlying time.Time instant is zero
 func (z Zeit) IsZero() bool {
 	return z.Time.IsZero()
+}
+
+func (z Zeit) String() string {
+	return z.Format(timeLayout)
 }
 
 // MarshalJSON implements the encoding/json marshaller interface
@@ -105,6 +110,29 @@ func (z *Zeit) Scan(v interface{}) error {
 
 type ZeitRange [2]Zeit
 
+// String implements the fmt.Stringer interface
+func (zr ZeitRange) String() string {
+	return fmt.Sprintf("%s, %s", zr[0].Format(timeLayout), zr[1].Format(timeLayout))
+}
+
+// Duration returns the duration between the two Zeit instants
+func (zr ZeitRange) Duration() time.Duration {
+	return zr[1].Sub(zr[0].Time)
+}
+
+// Split takes a Duration and splits a ZeitRange into
+// as many ZeitRange instants as posible
+func (zr ZeitRange) Split(d time.Duration) []*ZeitRange {
+	return nil
+}
+
+// SplitExcept will split the ZeitRange into
+// as many ZeitRanges as posible, without overlapping
+// any of except []*ZeitRange
+func (zr ZeitRange) SplitExcept(d time.Duration, except []*ZeitRange) []*ZeitRange {
+	return nil
+}
+
 // RangeFromZeit creates a ZeitRange instant from two Zeit instants
 func RangeFromZeit(from_z Zeit, to_z Zeit) (*ZeitRange, error) {
 	if from_z.Location().String() != to_z.Location().String() {
@@ -146,7 +174,8 @@ func (zr *ZeitRange) IsZero() bool {
 	return zr[0].IsZero() || zr[1].IsZero()
 }
 
-// Within reports if a give time.Time instant is within the range of the two Zeit instants in the ZeitRange
+// Within reports if a give time.Time instant is within
+// the range of the two Zeit instants in the ZeitRange
 func (zr *ZeitRange) Within(t time.Time) bool {
 	tmp := time.Date(0, 0, 0, t.Hour(), t.Minute(), t.Second(), 0, t.Location())
 
