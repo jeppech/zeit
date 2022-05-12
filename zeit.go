@@ -40,6 +40,11 @@ func FromTime(t time.Time) Zeit {
 // ex. Parse("23:10:05")
 func Parse(src string) (Zeit, error) {
 	var z Zeit
+
+	if len(src) != 8 {
+		return z, ErrZeitLayout
+	}
+
 	t, err := time.Parse(timeLayout, src)
 
 	if err == nil {
@@ -69,10 +74,19 @@ func (z Zeit) Equal(t Zeit) bool {
 	return z.String() == t.String()
 }
 
+// Within reports wether a Zeit is within the given ZeitRange
+// if the Zeit instants matches either the start of the
+// ZeitRange it returns true
+func (z Zeit) Within(zr ZeitRange) bool {
+	return (z.After(zr[0]) || z.Equal(zr[0])) && z.Before(zr[1])
+}
+
+// Before reports if this Zeit is before the given Zeit
 func (z Zeit) Before(t Zeit) bool {
 	return z.Time.Before(t.Time)
 }
 
+// After reports if this Zeit is after the given Zeit
 func (z Zeit) After(t Zeit) bool {
 	return z.Time.After(t.Time)
 }
@@ -144,6 +158,7 @@ func (z *Zeit) Scan(v interface{}) error {
 	return nil
 }
 
+// ZeitRange describes a start and end time
 type ZeitRange [2]Zeit
 
 // RangeFromZeit creates a ZeitRange instant from two Zeit instants
@@ -184,10 +199,10 @@ func RangeParseInLoc(from string, to string, loc *time.Location) (ZeitRange, err
 	return RangeFromZeit(z_from, z_to)
 }
 
-// RangeParse create a ZeitRange from two strings in UTC
+// ParseRange create a ZeitRange from two strings in UTC
 //
-// ex. RangeParse("10:15:00", "23:00:30")
-func RangeParse(from string, to string) (ZeitRange, error) {
+// ex. ParseRange("10:15:00", "23:00:30")
+func ParseRange(from string, to string) (ZeitRange, error) {
 	var z ZeitRange
 	z_from, err := Parse(from)
 
@@ -228,31 +243,53 @@ func (zr ZeitRange) Split(d time.Duration) []ZeitRange {
 	return z_range
 }
 
-// SplitExcept will split the ZeitRange into
-// as many ZeitRanges as posible, without overlapping
-// any of except []*ZeitRange
-func (zr ZeitRange) SplitExcept(d time.Duration, except []ZeitRange) []ZeitRange {
-	z_range := zr.Split(d)
-	z_range2 := make([]ZeitRange, 0, len(z_range))
+// SplitOffset takes offset and splits a ZeitRange into
+// as many ZeitRange instants as posible, based on offset
+// as long as offset+d does not exceed the `end` Zeit
+func (zr ZeitRange) SplitOffset(offset time.Duration, d time.Duration) []ZeitRange {
+	z1, z2 := zr.ToZeit()
 
-	fmt.Println(len(z_range))
-	var is_excp bool
+	diff := z2.Sub(z1.Time)
+	slots := int(diff / offset)
 
-	for _, zr2 := range z_range {
-		is_excp = false
-		for _, excp := range except {
-			z1, z2 := zr2.ToZeit()
-			if !excp.Within(z1) && !excp.Within(z2) {
-				continue
-			}
-			is_excp = true
+	z_range := make([]ZeitRange, slots)
+	start := z1
+
+	for i := 0; i < slots; i++ {
+		// ??????????????????????
+		next := start.Add(offset)
+		end := start.Add(d)
+		if !end.Before(z2) {
 			break
 		}
 
-		if !is_excp {
-			z_range2 = append(z_range2, zr2)
-		}
+		z_range[i] = ZeitRange{start, end}
+		start = next
 	}
+
+	return z_range
+}
+
+// Exclude will generate a new list of ZeitRange instants, where
+// the given list of ZeitRanges, will be excluded from.
+//
+// Example usage of this, could be to generate "available" times, from a list
+// of "occupied" times.
+func (zr ZeitRange) Exclude(filter []ZeitRange) []ZeitRange {
+	zr_start, zr_end := zr.ToZeit()
+	// Allocate a new array
+	z_range2 := make([]ZeitRange, 0, len(filter)+1)
+
+	z_last := zr_start
+	for _, zr2 := range filter {
+		z_range2 = append(z_range2, ZeitRange{z_last, zr2[0]})
+		z_last = zr2[1]
+	}
+
+	if !z_last.Equal(zr_end) {
+		z_range2 = append(z_range2, ZeitRange{z_last, zr_end})
+	}
+
 	return z_range2
 }
 
@@ -263,17 +300,66 @@ func (zr ZeitRange) Add(d time.Duration) (ZeitRange, error) {
 	return RangeFromZeit(z1.Add(d), z2.Add(d))
 }
 
-// Within reports if a give time.Time instant is within
-// the range of the two Zeit instants in the ZeitRange
-//
-// note: the locat
-func (zr ZeitRange) Within(z Zeit) bool {
-	return z.After(zr[0]) && z.Before(zr[1])
+// SplitFilter will split the ZeitRange into
+// as many ZeitRanges as posible, without overlapping
+// any of the given range_exceptions
+func (zr ZeitRange) SplitFilter(d time.Duration, range_exceptions []ZeitRange) []ZeitRange {
+	z_range := zr.Split(d)
+	z_range2 := make([]ZeitRange, 0, len(z_range))
+
+	var overlap bool
+
+	for _, zr2 := range z_range {
+		overlap = false
+		for _, excp := range range_exceptions {
+			if excp.Overlapping(zr2) {
+				overlap = true
+				break
+			}
+		}
+
+		if !overlap {
+			z_range2 = append(z_range2, zr2)
+		}
+	}
+	return z_range2
 }
+
+// Within reports if a given Zeit instant is within
+// the range of the two Zeit instants in the ZeitRange
+// func (zr ZeitRange) Within(z Zeit) bool {
+// 	return z.Before(zr[1]) && z.After(zr[0])
+// 	return z.After(zr[0]) && z.Before(zr[1])
+// }
+
+// Overlapping reports if zr overlaps the given t
+func (zr ZeitRange) Overlapping(t ZeitRange) bool {
+	zr_start, zr_end := zr.ToZeit()
+	t_start, t_end := t.ToZeit()
+
+	if zr_start.Before(t_start) && zr_end.After(t_end) {
+		// If the zr_end is equal to t_start, we don't consider it to be overlapping
+		return !zr_end.Equal(t_start)
+	}
+
+	if zr_start.Within(t) || zr_end.Within(t) {
+
+		return !zr_end.Equal(t_start)
+	}
+
+	return false
+}
+
+// OverlapsRange reports if this ZeitRange instant is in any way
+// overlapping the given z_range
+// func (zr ZeitRange) OverlapsRange(z_range ZeitRange) bool {
+// 	zr[0].Within(z_range) zr[1].Within(z_range)
+// 	return z_range.Within(zr[0]) || z_range.Within(zr[1]) || (z_range[0].Before(zr[0]) && z_range[1].After(zr[1]))
+// }
 
 // String implements the fmt.Stringer interface
 func (zr ZeitRange) String() string {
-	return fmt.Sprintf("%s, %s", zr[0].Format(timeLayout), zr[1].Format(timeLayout))
+	return fmt.Sprintf("%s - %s", zr[0].Format(timeLayout), zr[1].Format(timeLayout))
 }
 
 // Duration returns the duration between the two Zeit instants

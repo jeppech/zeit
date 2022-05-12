@@ -11,12 +11,12 @@ import (
 )
 
 func main() {
-  now := time.Now()
-  fmt.Println(now)
+  now := time.Now().UTC()
+  fmt.Println(now) // 2022-05-06 07:19:35.072174 +0000 UTC
 
-  z_now := zeit.Now()
+  z_now := zeit.Now() // 07:19:35
   fmt.Println(z_now)
 
-  
+
 }
 ```
