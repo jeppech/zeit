@@ -1,7 +1,6 @@
 package zeit
 
 import (
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"time"
@@ -59,9 +58,13 @@ func ParseInLoc(src string, loc *time.Location) (Zeit, error) {
 	t, err := time.Parse(timeLayout, src)
 
 	if err == nil {
-		z = Zeit{t.In(loc)}
+		z.Time = t.In(loc)
 	}
 	return z, err
+}
+
+func (z Zeit) Test() string {
+	return "TEST"
 }
 
 func (z Zeit) Add(d time.Duration) Zeit {
@@ -111,63 +114,6 @@ func (z Zeit) Location() *time.Location {
 
 func (z Zeit) Sub(t Zeit) time.Duration {
 	return z.Time.Sub(t.Time)
-}
-
-// MarshalJSON implements the encoding/json marshaller interface
-func (z Zeit) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + z.Format(timeLayout) + `"`), nil
-}
-
-// UnmarshalJSON implements the encoding/json unmarshaller interface
-func (z *Zeit) UnmarshalJSON(b []byte) error {
-	s := string(b)
-
-	if len(s) != 10 {
-		return ErrZeitLayout
-	}
-
-	var ret time.Time
-	var err error
-
-	if ret, err = time.Parse(timeLayout, s[1:9]); err != nil {
-		return err
-	}
-
-	z.Time = ret
-
-	return nil
-}
-
-// Value implements the database/sql Valuer interface
-func (z Zeit) Value() (driver.Value, error) {
-	return driver.Value(z.Format(timeLayout)), nil
-}
-
-// Scan implements the database/sql Scanner interface
-func (z *Zeit) Scan(v interface{}) error {
-	var source string
-
-	switch v := v.(type) {
-	case string:
-		source = v
-
-	case []byte:
-		source = string(v)
-
-	default:
-		return ErrZeitType
-	}
-
-	var ret time.Time
-	var err error
-
-	if ret, err = time.Parse(timeLayout, source); err != nil {
-		return err
-	}
-
-	z.Time = ret
-
-	return nil
 }
 
 // ZeitRange describes a start and end time
