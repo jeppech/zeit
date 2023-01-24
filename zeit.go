@@ -48,7 +48,7 @@ func Parse(src string) (Zeit, error) {
 	t, err := time.Parse(timeLayout, src)
 
 	if err == nil {
-		z.Time = t
+		z = Zeit{t}
 	}
 	return z, err
 }
@@ -59,13 +59,13 @@ func ParseInLoc(src string, loc *time.Location) (Zeit, error) {
 	t, err := time.Parse(timeLayout, src)
 
 	if err == nil {
-		z.Time = t.In(loc)
+		z = Zeit{t.In(loc)}
 	}
 	return z, err
 }
 
 func (z Zeit) Add(d time.Duration) Zeit {
-	z.Time = z.Time.Add(d)
+	z.Time.Add(d)
 	return z
 }
 
@@ -99,6 +99,18 @@ func (z Zeit) IsZero() bool {
 // String implements the fmt.Stringer interface
 func (z Zeit) String() string {
 	return z.Format(timeLayout)
+}
+
+func (z Zeit) Format(layout string) string {
+	return z.Time.Format(layout)
+}
+
+func (z Zeit) Location() *time.Location {
+	return z.Time.Location()
+}
+
+func (z Zeit) Sub(t Zeit) time.Duration {
+	return z.Time.Sub(t.Time)
 }
 
 // MarshalJSON implements the encoding/json marshaller interface
@@ -163,11 +175,12 @@ type ZeitRange [2]Zeit
 
 // RangeFromZeit creates a ZeitRange instant from two Zeit instants
 func RangeFromZeit(from_z Zeit, to_z Zeit) (ZeitRange, error) {
+
 	if from_z.Location().String() != to_z.Location().String() {
 		return ZeitRange{}, ErrZeitRangeLocation
 	}
 
-	if to_z.Sub(from_z.Time) >= 24*time.Hour {
+	if to_z.Sub(from_z) >= 24*time.Hour {
 		return ZeitRange{}, ErrZeitRangeDuration
 	}
 
@@ -228,7 +241,7 @@ func (zr ZeitRange) ToZeit() (Zeit, Zeit) {
 func (zr ZeitRange) Split(d time.Duration) []ZeitRange {
 	z1, z2 := zr.ToZeit()
 
-	diff := z2.Sub(z1.Time)
+	diff := z2.Sub(z1)
 	slots := int(diff / d)
 
 	z_range := make([]ZeitRange, slots)
@@ -249,7 +262,7 @@ func (zr ZeitRange) Split(d time.Duration) []ZeitRange {
 func (zr ZeitRange) SplitOffset(offset time.Duration, d time.Duration) []ZeitRange {
 	z1, z2 := zr.ToZeit()
 
-	diff := z2.Sub(z1.Time)
+	diff := z2.Sub(z1)
 	slots := int(diff / offset)
 
 	z_range := make([]ZeitRange, slots)
@@ -364,7 +377,7 @@ func (zr ZeitRange) String() string {
 
 // Duration returns the duration between the two Zeit instants
 func (zr ZeitRange) Duration() time.Duration {
-	return zr[1].Sub(zr[0].Time)
+	return zr[1].Sub(zr[0])
 }
 
 // IsZero reports if either of the two underlying time.Time instants are zero
