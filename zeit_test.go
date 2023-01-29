@@ -25,6 +25,11 @@ const (
 	t4_to   = "16:00:00"
 )
 
+type ToFrom struct {
+	From string
+	To   string
+}
+
 func TestParseBadZeit(t *testing.T) {
 	var tests = []struct {
 		val      string
@@ -127,4 +132,31 @@ func TestZeitRange(t *testing.T) {
 	// 	}
 	// 	fmt.Println("---")
 	// }
+}
+
+func BenchmarkZeitRange(b *testing.B) {
+	b.Run("ZeitNoTimezones", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t1 := Now()
+			t2, _ := Parse("23:59:59")
+			RangeFromZeit(t1, t2)
+
+			r, _ := ParseRange("08:00:00", "17:00:00")
+
+			r.Split(30 * time.Minute)
+		}
+	})
+
+	b.Run("ZeitTimezones", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			loc, _ := time.LoadLocation("Europe/Copenhagen")
+			t1 := NowInLoc(loc)
+			t2 := t1.Add(8 * time.Hour)
+			RangeFromZeit(t1, t2)
+
+			r, _ := ParseRange("08:00:00", "17:00:00")
+
+			r.Split(30 * time.Minute)
+		}
+	})
 }
