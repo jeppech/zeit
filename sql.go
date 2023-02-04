@@ -21,12 +21,21 @@ func (z *Zeit) Scan(v interface{}) error {
 	case []byte:
 		source = string(v)
 
+	case nil:
+		source = ""
+
 	default:
 		return ErrZeitType
 	}
 
 	var ret time.Time
 	var err error
+
+	if source == "" {
+		// If the source is empty, we set the time to the zero value
+		z.Time = time.Time{}
+		return nil
+	}
 
 	if ret, err = time.Parse(timeLayout, source); err != nil {
 		return err
